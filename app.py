@@ -49,7 +49,7 @@ def extract_text_from_docx_with_tables(file_path):
         logging.error(f'An error occurred: {str(e)}', exc_info=True)
         return str(e)
 
-def chunk_text(text, max_length=500):
+def chunk_text(text, max_length=200):  # Changed max_length to 200
     """Chunk text into smaller segments."""
     words = text.split()
     chunks = []
@@ -147,9 +147,9 @@ if st.session_state.messages[-1]["role"] != "assistant":
             query_embedding = np.array(query_embedding_response['data'][0]['embedding']).astype('float32').reshape(1, -1)
 
             # Find the closest document embeddings
-            distances, indices = st.session_state.embeddings_index.search(query_embedding, k=8)  # Top 8 results
+            distances, indices = st.session_state.embeddings_index.search(query_embedding, k=2)  # Top 2 results
 
-            # Retrieve the corresponding documents for the top 8 indices
+            # Retrieve the corresponding documents for the top 2 indices
             relevant_docs = []
             for idx in indices[0]:
                 if idx < len(st.session_state.documents):
@@ -157,19 +157,29 @@ if st.session_state.messages[-1]["role"] != "assistant":
 
             context = " ".join(relevant_docs)
 
+            # Improved prompt for the LLM
+            improved_prompt = f"Based on the following context, answer the question as accurately as possible. Context: {context}\n\nQuestion: {prompt}"
+
             # Send the context to OpenAI API for response generation
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "user", "content": f"{context}\n\n{prompt}"}
+                    {"role": "user", "content": improved_prompt}
                 ],
                 api_key=os.getenv("OPENAI_API_KEY")
             )
             answer = response.choices[0].message['content']
+
+            # Display the answer
             st.write(answer)
             logging.info(f"question: {prompt}, response: {answer}")
             message = {"role": "assistant", "content": answer}
             st.session_state.messages.append(message)
+
+            # Show the relevant chunks used with formatting
+            st.write("### Relevant chunks used to generate the answer:")
+            for doc in relevant_docs:
+                st.write(f"- **{doc}**")  # Bold to stand out
 
 # Docker commands
 # docker build -t medi_chat .

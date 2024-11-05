@@ -126,7 +126,7 @@ else:
 # Store original documents separately
 st.session_state.documents = load_medical_documents()
 
-# Initialize persistent context if it doesn't exist
+# Initialize context if it doesn't exist
 if "context" not in st.session_state:
     st.session_state.context = ""
 
@@ -178,17 +178,18 @@ if st.session_state.messages[-1]["role"] != "assistant":
             )
             answer = response.choices[0].message['content']
 
-            # Display the answer
-            st.write(answer)
-            logging.info(f"question: {prompt}, response: {answer}")
-            message = {"role": "assistant", "content": answer}
-            st.session_state.messages.append(message)
+            # Format the response to include relevant documents
+            relevant_docs_str = "\n".join([f"- {doc}" for doc in relevant_docs])  # Bullet points for relevant docs
+            full_response = f"{answer}\n\n---\n\n### Relevant Context:\n{relevant_docs_str}"
 
-            # Show the relevant chunks used with formatting
-            st.write("### Relevant chunks used to generate the answer:")
-            for doc in relevant_docs:
-                st.write(f"- **{doc}**")  # Bold to stand out
+
+            # Display the formatted answer
+            st.write(full_response)
+            logging.info(f"question: {prompt}, response: {full_response}")
+            message = {"role": "assistant", "content": full_response}
+            st.session_state.messages.append(message)
 
 # Docker commands
 # docker build -t medi_chat .
-# docker run -p 8503:8501 -e OPENAI_API_KEY="" medi_chat
+# docker run -p 8503:8501 -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY" medi_chat
+# Visit http://localhost:8503/

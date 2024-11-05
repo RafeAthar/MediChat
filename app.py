@@ -73,8 +73,10 @@ def load_medical_documents():
         # Chunk the document text
         chunks = chunk_text(doc_text)
         for i, chunk in enumerate(chunks):
+            # Include filename and chunk number in the chunk text
+            chunk_with_metadata = f"[{filename} - Chunk {i}] {chunk}"
             documents.append({
-                'text': chunk,
+                'text': chunk_with_metadata,
                 'metadata': {
                     'filename': filename,
                     'chunk_number': i
@@ -93,7 +95,7 @@ def generate_embeddings(documents):
     return np.array(embeddings).astype('float32')
 
 def save_embeddings(embeddings):
-    st.write("Saving embeddings...")  # Inform the user
+    st.write("Saving embeddings... Please wait.")  # Inform the user
     faiss_index = faiss.IndexFlatL2(embeddings.shape[1])
     faiss_index.add(embeddings)
     faiss.write_index(faiss_index, EMBEDDINGS_FILE)
@@ -111,6 +113,7 @@ if os.path.exists(EMBEDDINGS_FILE):
     st.write("Embeddings loaded!")
 else:
     if os.path.exists(DOCUMENTS_DIR):
+        st.write("Generating embeddings... Please wait.")  # Inform the user
         medical_documents = load_medical_documents()
         document_embeddings = generate_embeddings(medical_documents)
         save_embeddings(document_embeddings)
@@ -122,6 +125,10 @@ else:
 
 # Store original documents separately
 st.session_state.documents = load_medical_documents()
+
+# Initialize persistent context if it doesn't exist
+if "context" not in st.session_state:
+    st.session_state.context = ""
 
 # Chat Interaction
 if "messages" not in st.session_state:
@@ -155,10 +162,11 @@ if st.session_state.messages[-1]["role"] != "assistant":
                 if idx < len(st.session_state.documents):
                     relevant_docs.append(st.session_state.documents[idx]['text'])
 
-            context = " ".join(relevant_docs)
+            # Update the context with the relevant documents
+            st.session_state.context = " ".join(relevant_docs)
 
             # Improved prompt for the LLM
-            improved_prompt = f"Based on the following context, answer the question as accurately as possible. Context: {context}\n\nQuestion: {prompt}"
+            improved_prompt = f"Based on the following context, answer the question as accurately as possible. Context: {st.session_state.context}\n\nQuestion: {prompt}"
 
             # Send the context to OpenAI API for response generation
             response = openai.ChatCompletion.create(

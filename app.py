@@ -49,7 +49,15 @@ def extract_text_from_docx_with_tables(file_path):
         logging.error(f'An error occurred: {str(e)}', exc_info=True)
         return str(e)
 
-# Load Documents and Create or Load Embeddings
+def chunk_text(text, max_length=500):
+    """Chunk text into smaller segments."""
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), max_length):
+        chunk = ' '.join(words[i:i + max_length])
+        chunks.append(chunk)
+    return chunks
+
 def load_medical_documents():
     documents = []
     for filename in os.listdir(DOCUMENTS_DIR):
@@ -62,7 +70,16 @@ def load_medical_documents():
             logging.info(f"{filename} File type not supported!")
             continue
         
-        documents.append(doc_text)
+        # Chunk the document text
+        chunks = chunk_text(doc_text)
+        for i, chunk in enumerate(chunks):
+            documents.append({
+                'text': chunk,
+                'metadata': {
+                    'filename': filename,
+                    'chunk_number': i
+                }
+            })
     return documents
 
 def generate_embeddings(documents):
@@ -70,18 +87,23 @@ def generate_embeddings(documents):
     for doc in documents:
         embedding_response = openai.Embedding.create(
             model="text-embedding-3-small",
-            input=doc
+            input=doc['text']
         )
         embeddings.append(embedding_response['data'][0]['embedding'])
     return np.array(embeddings).astype('float32')
 
 def save_embeddings(embeddings):
+    st.write("Saving embeddings...")  # Inform the user
     faiss_index = faiss.IndexFlatL2(embeddings.shape[1])
     faiss_index.add(embeddings)
     faiss.write_index(faiss_index, EMBEDDINGS_FILE)
 
 def load_embeddings():
-    return faiss.read_index(EMBEDDINGS_FILE)
+    """Load the FAISS index from file."""
+    if os.path.exists(EMBEDDINGS_FILE):
+        return faiss.read_index(EMBEDDINGS_FILE)
+    else:
+        return None
 
 # Check if the document embeddings already exist
 if os.path.exists(EMBEDDINGS_FILE):
@@ -93,11 +115,13 @@ else:
         document_embeddings = generate_embeddings(medical_documents)
         save_embeddings(document_embeddings)
         st.session_state.embeddings_index = faiss.IndexFlatL2(document_embeddings.shape[1])
-        st.session_state.embeddings_index.add(document_embeddings)
         st.write("Document embeddings generated and saved!")
     else:
         st.write("Medical documents folder not found.")
         st.stop()
+
+# Store original documents separately
+st.session_state.documents = load_medical_documents()
 
 # Chat Interaction
 if "messages" not in st.session_state:
@@ -123,10 +147,14 @@ if st.session_state.messages[-1]["role"] != "assistant":
             query_embedding = np.array(query_embedding_response['data'][0]['embedding']).astype('float32').reshape(1, -1)
 
             # Find the closest document embeddings
-            distances, indices = st.session_state.embeddings_index.search(query_embedding, k=5)  # Top 5 results
+            distances, indices = st.session_state.embeddings_index.search(query_embedding, k=8)  # Top 8 results
 
-            # Retrieve the corresponding documents
-            relevant_docs = [st.session_state.embeddings_index.reconstruct(idx) for idx in indices[0]]
+            # Retrieve the corresponding documents for the top 8 indices
+            relevant_docs = []
+            for idx in indices[0]:
+                if idx < len(st.session_state.documents):
+                    relevant_docs.append(st.session_state.documents[idx]['text'])
+
             context = " ".join(relevant_docs)
 
             # Send the context to OpenAI API for response generation

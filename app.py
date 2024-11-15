@@ -180,7 +180,7 @@ if st.session_state.messages[-1]["role"] != "assistant":
 
             # Format the response to include relevant documents
             relevant_docs_str = "\n".join([f"- {doc}" for doc in relevant_docs])  # Bullet points for relevant docs
-            full_response = f"{answer}\n\n---\n\n### Relevant Context:\n{relevant_docs_str}"
+            full_response = f"{answer}\n\n---\n\n### Source:\n{relevant_docs_str}"
 
 
             # Display the formatted answer
@@ -188,8 +188,3 @@ if st.session_state.messages[-1]["role"] != "assistant":
             logging.info(f"question: {prompt}, response: {full_response}")
             message = {"role": "assistant", "content": full_response}
             st.session_state.messages.append(message)
-
-# Docker commands
-# docker build -t medi_chat .
-# docker run -p 8503:8501 -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY" medi_chat
-# Visit http://localhost:8503/

@@ -45,8 +45,14 @@ def load_embedding_model():
 
 embedding_model = load_embedding_model()
 
-# Initialize Anthropic client
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Initialize Anthropic client (deferred — only needed when answering questions)
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
+def get_anthropic_client():
+    if not ANTHROPIC_API_KEY:
+        st.error("ANTHROPIC_API_KEY environment variable is not set. Please set it to use the chat feature.")
+        st.stop()
+    return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # Helper functions to extract text from documents
 def process_pdf(pdf_path):
@@ -201,7 +207,8 @@ if st.session_state.messages[-1]["role"] != "assistant":
             improved_prompt = f"Based on the following context, answer the question as accurately as possible. Context: {st.session_state.context}\n\nQuestion: {prompt}"
 
             # Send the context to Anthropic API for response generation
-            response = client.messages.create(
+            anthropic_client = get_anthropic_client()
+            response = anthropic_client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=1024,
                 messages=[

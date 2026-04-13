@@ -49,8 +49,8 @@ PyPDF2==3.0.1
 docx2txt==0.8
 anthropic>=0.34.0
 sentence-transformers>=2.2.0
-faiss-cpu==1.7.2
-numpy==1.23.0
+faiss-cpu>=1.8.0
+numpy>=1.23.0
 ```
 
 ### 3. Create a Dockerfile

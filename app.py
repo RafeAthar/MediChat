@@ -7,7 +7,8 @@ import faiss
 from PyPDF2 import PdfReader
 import docx2txt
 import re
-import openai
+import anthropic
+from sentence_transformers import SentenceTransformer
 
 # Streamlit App and Page Configuration
 st.set_page_config(
@@ -36,6 +37,16 @@ CHAT_HISTORY_FILE = os.path.join(DATA_DIR, "chat_history.json")
 
 # Ensure the data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
+
+# Initialize the local embedding model
+@st.cache_resource
+def load_embedding_model():
+    return SentenceTransformer("all-MiniLM-L6-v2")
+
+embedding_model = load_embedding_model()
+
+# Initialize Anthropic client
+client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 # Helper functions to extract text from documents
 def process_pdf(pdf_path):
@@ -91,13 +102,8 @@ def load_medical_documents():
     return documents
 
 def generate_embeddings(documents):
-    embeddings = []
-    for doc in documents:
-        embedding_response = openai.Embedding.create(
-            model="text-embedding-3-small",
-            input=doc['text']
-        )
-        embeddings.append(embedding_response['data'][0]['embedding'])
+    texts = [doc['text'] for doc in documents]
+    embeddings = embedding_model.encode(texts, show_progress_bar=True)
     return np.array(embeddings).astype('float32')
 
 def save_embeddings(embeddings):
@@ -176,12 +182,8 @@ for message in st.session_state.messages:
 if st.session_state.messages[-1]["role"] != "assistant":
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            # Generate embedding for the user's query
-            query_embedding_response = openai.Embedding.create(
-                model="text-embedding-3-small",
-                input=prompt
-            )
-            query_embedding = np.array(query_embedding_response['data'][0]['embedding']).astype('float32').reshape(1, -1)
+            # Generate embedding for the user's query using local model
+            query_embedding = embedding_model.encode([prompt]).astype('float32')
 
             # Find the closest document embeddings
             distances, indices = st.session_state.embeddings_index.search(query_embedding, k=2)  # Top 2 results
@@ -198,15 +200,15 @@ if st.session_state.messages[-1]["role"] != "assistant":
             # Improved prompt for the LLM
             improved_prompt = f"Based on the following context, answer the question as accurately as possible. Context: {st.session_state.context}\n\nQuestion: {prompt}"
 
-            # Send the context to OpenAI API for response generation
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
+            # Send the context to Anthropic API for response generation
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1024,
                 messages=[
                     {"role": "user", "content": improved_prompt}
-                ],
-                api_key=os.getenv("OPENAI_API_KEY")
+                ]
             )
-            answer = response.choices[0].message['content']
+            answer = response.content[0].text
 
             # Format the response to include relevant documents
             relevant_docs_str = "\n".join([f"- {doc}" for doc in relevant_docs])  # Bullet points for relevant docs

@@ -5,7 +5,7 @@ Docker commands
 ----
 docker build -t medi_chat .
 
-docker run -p 8501:8501 -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY" medi_chat
+docker run -p 8501:8501 -v medi_chat_data:/app/data -e ANTHROPIC_API_KEY="YOUR_ANTHROPIC_API_KEY" medi_chat
 
 
 
@@ -15,20 +15,20 @@ Visit http://localhost:8501/
 # MediChat Documentation
 
 ## Overview
-MediChat is a Streamlit-based web application designed to facilitate conversations about medical topics using stored documents. The application leverages OpenAI's language models to provide accurate responses based on the context derived from medical documents.
+MediChat is a Streamlit-based web application designed to facilitate conversations about medical topics using stored documents. The application leverages Anthropic's Claude for responses and a local sentence-transformers model for embeddings, based on the context derived from medical documents.
 
 ## Tech Stack
 - **Frontend**: Streamlit
 - **Backend**: Python
 - **Document Processing**: PyPDF2, docx2txt
-- **Machine Learning**: OpenAI API for embeddings and responses
+- **Machine Learning**: Anthropic Claude API for responses, sentence-transformers for local embeddings
 - **Data Storage**: FAISS for efficient similarity search
 - **Containerization**: Docker
 
 ## Prerequisites
 Before running the application, ensure you have the following:
 - Docker installed on your machine.
-- An OpenAI API key. You can obtain one by signing up at [OpenAI](https://openai.com/).
+- An Anthropic API key. You can obtain one by signing up at [Anthropic](https://console.anthropic.com/).
 
 ## Setup Instructions
 
@@ -47,9 +47,10 @@ Ensure the `requirements.txt` file is present in the root directory of the proje
 streamlit==1.24.0
 PyPDF2==3.0.1
 docx2txt==0.8
-openai==0.27.0
-faiss-cpu==1.7.2
-numpy==1.23.0
+anthropic>=0.34.0
+sentence-transformers>=2.2.0
+faiss-cpu>=1.8.0
+numpy>=1.23.0
 ```
 
 ### 3. Create a Dockerfile
@@ -84,10 +85,12 @@ docker build -t medi_chat .
 ```
 
 ### 5. Run the Docker Container
-To run the application, execute the following command, replacing `YOUR_OPENAI_API_KEY` with your actual OpenAI API key:
+To run the application, execute the following command, replacing `YOUR_ANTHROPIC_API_KEY` with your actual Anthropic API key:
 ```bash
-docker run -p 8501:8501 -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY" medi_chat
+docker run -p 8501:8501 -v medi_chat_data:/app/data -e ANTHROPIC_API_KEY="YOUR_ANTHROPIC_API_KEY" medi_chat
 ```
+
+> **Note:** The `-v medi_chat_data:/app/data` flag creates a named Docker volume that persists your data (chat history and document embeddings) across container restarts. Without this flag, data will be lost when the container is stopped or removed.
 
 ### 6. Access the Application
 Open your web browser and navigate to [http://localhost:8501](http://localhost:8501) to access the MediChat application.

@@ -1,12 +1,14 @@
 import streamlit as st
 import logging
 import os
+import json
 import numpy as np
 import faiss
 from PyPDF2 import PdfReader
 import docx2txt
 import re
-import openai
+import anthropic
+from sentence_transformers import SentenceTransformer
 
 # Streamlit App and Page Configuration
 st.set_page_config(
@@ -29,7 +31,28 @@ logging.basicConfig(
 
 # Define the directory where documents are stored
 DOCUMENTS_DIR = "./documents"  # Medical documents folder
-EMBEDDINGS_FILE = "document_embeddings.faiss"
+DATA_DIR = "./data"  # Persistent data directory
+EMBEDDINGS_FILE = os.path.join(DATA_DIR, "document_embeddings.faiss")
+CHAT_HISTORY_FILE = os.path.join(DATA_DIR, "chat_history.json")
+
+# Ensure the data directory exists
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Initialize the local embedding model
+@st.cache_resource
+def load_embedding_model():
+    return SentenceTransformer("all-MiniLM-L6-v2")
+
+embedding_model = load_embedding_model()
+
+# Initialize Anthropic client (deferred — only needed when answering questions)
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
+def get_anthropic_client():
+    if not ANTHROPIC_API_KEY:
+        st.error("ANTHROPIC_API_KEY environment variable is not set. Please set it to use the chat feature.")
+        st.stop()
+    return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # Helper functions to extract text from documents
 def process_pdf(pdf_path):
@@ -85,13 +108,8 @@ def load_medical_documents():
     return documents
 
 def generate_embeddings(documents):
-    embeddings = []
-    for doc in documents:
-        embedding_response = openai.Embedding.create(
-            model="text-embedding-3-small",
-            input=doc['text']
-        )
-        embeddings.append(embedding_response['data'][0]['embedding'])
+    texts = [doc['text'] for doc in documents]
+    embeddings = embedding_model.encode(texts, show_progress_bar=True)
     return np.array(embeddings).astype('float32')
 
 def save_embeddings(embeddings):
@@ -130,28 +148,48 @@ st.session_state.documents = load_medical_documents()
 if "context" not in st.session_state:
     st.session_state.context = ""
 
+# --- Chat History Persistence ---
+def load_chat_history():
+    """Load chat history from a JSON file on disk."""
+    if os.path.exists(CHAT_HISTORY_FILE):
+        try:
+            with open(CHAT_HISTORY_FILE, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logging.error(f"Failed to load chat history: {e}")
+    return None
+
+def save_chat_history(messages):
+    """Save chat history to a JSON file on disk."""
+    try:
+        with open(CHAT_HISTORY_FILE, "w") as f:
+            json.dump(messages, f, indent=2)
+    except IOError as e:
+        logging.error(f"Failed to save chat history: {e}")
+
 # Chat Interaction
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Ask me a question about medical topics based on the stored documents!"}
-    ]
+    saved_messages = load_chat_history()
+    if saved_messages:
+        st.session_state.messages = saved_messages
+    else:
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Ask me a question about medical topics based on the stored documents!"}
+        ]
 
 if prompt := st.chat_input("Your question"):
     st.session_state.messages.append({"role": "user", "content": prompt})
+    save_chat_history(st.session_state.messages)
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-if st.session_state.messages[-1]["role"] != "assistant":
+if prompt and st.session_state.messages[-1]["role"] != "assistant":
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            # Generate embedding for the user's query
-            query_embedding_response = openai.Embedding.create(
-                model="text-embedding-3-small",
-                input=prompt
-            )
-            query_embedding = np.array(query_embedding_response['data'][0]['embedding']).astype('float32').reshape(1, -1)
+            # Generate embedding for the user's query using local model
+            query_embedding = embedding_model.encode([prompt]).astype('float32')
 
             # Find the closest document embeddings
             distances, indices = st.session_state.embeddings_index.search(query_embedding, k=2)  # Top 2 results
@@ -168,15 +206,16 @@ if st.session_state.messages[-1]["role"] != "assistant":
             # Improved prompt for the LLM
             improved_prompt = f"Based on the following context, answer the question as accurately as possible. Context: {st.session_state.context}\n\nQuestion: {prompt}"
 
-            # Send the context to OpenAI API for response generation
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
+            # Send the context to Anthropic API for response generation
+            anthropic_client = get_anthropic_client()
+            response = anthropic_client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1024,
                 messages=[
                     {"role": "user", "content": improved_prompt}
-                ],
-                api_key=os.getenv("OPENAI_API_KEY")
+                ]
             )
-            answer = response.choices[0].message['content']
+            answer = response.content[0].text
 
             # Format the response to include relevant documents
             relevant_docs_str = "\n".join([f"- {doc}" for doc in relevant_docs])  # Bullet points for relevant docs
@@ -188,3 +227,4 @@ if st.session_state.messages[-1]["role"] != "assistant":
             logging.info(f"question: {prompt}, response: {full_response}")
             message = {"role": "assistant", "content": full_response}
             st.session_state.messages.append(message)
+            save_chat_history(st.session_state.messages)

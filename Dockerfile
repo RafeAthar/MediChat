@@ -13,6 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your application code
 COPY . .
 
+# Create the persistent data directory
+RUN mkdir -p /app/data
+
+# Declare a volume for persistent data (embeddings + chat history)
+VOLUME /app/data
+
 # Expose the port on which the app will run
 EXPOSE 8501
 

@@ -5,7 +5,7 @@ Docker commands
 ----
 docker build -t medi_chat .
 
-docker run -p 8501:8501 -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY" medi_chat
+docker run -p 8501:8501 -v medi_chat_data:/app/data -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY" medi_chat
 
 
 
@@ -86,8 +86,10 @@ docker build -t medi_chat .
 ### 5. Run the Docker Container
 To run the application, execute the following command, replacing `YOUR_OPENAI_API_KEY` with your actual OpenAI API key:
 ```bash
-docker run -p 8501:8501 -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY" medi_chat
+docker run -p 8501:8501 -v medi_chat_data:/app/data -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY" medi_chat
 ```
+
+> **Note:** The `-v medi_chat_data:/app/data` flag creates a named Docker volume that persists your data (chat history and document embeddings) across container restarts. Without this flag, data will be lost when the container is stopped or removed.
 
 ### 6. Access the Application
 Open your web browser and navigate to [http://localhost:8501](http://localhost:8501) to access the MediChat application.

@@ -1,6 +1,7 @@
 import streamlit as st
 import logging
 import os
+import json
 import numpy as np
 import faiss
 from PyPDF2 import PdfReader
@@ -29,7 +30,12 @@ logging.basicConfig(
 
 # Define the directory where documents are stored
 DOCUMENTS_DIR = "./documents"  # Medical documents folder
-EMBEDDINGS_FILE = "document_embeddings.faiss"
+DATA_DIR = "./data"  # Persistent data directory
+EMBEDDINGS_FILE = os.path.join(DATA_DIR, "document_embeddings.faiss")
+CHAT_HISTORY_FILE = os.path.join(DATA_DIR, "chat_history.json")
+
+# Ensure the data directory exists
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # Helper functions to extract text from documents
 def process_pdf(pdf_path):
@@ -130,14 +136,38 @@ st.session_state.documents = load_medical_documents()
 if "context" not in st.session_state:
     st.session_state.context = ""
 
+# --- Chat History Persistence ---
+def load_chat_history():
+    """Load chat history from a JSON file on disk."""
+    if os.path.exists(CHAT_HISTORY_FILE):
+        try:
+            with open(CHAT_HISTORY_FILE, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logging.error(f"Failed to load chat history: {e}")
+    return None
+
+def save_chat_history(messages):
+    """Save chat history to a JSON file on disk."""
+    try:
+        with open(CHAT_HISTORY_FILE, "w") as f:
+            json.dump(messages, f, indent=2)
+    except IOError as e:
+        logging.error(f"Failed to save chat history: {e}")
+
 # Chat Interaction
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Ask me a question about medical topics based on the stored documents!"}
-    ]
+    saved_messages = load_chat_history()
+    if saved_messages:
+        st.session_state.messages = saved_messages
+    else:
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Ask me a question about medical topics based on the stored documents!"}
+        ]
 
 if prompt := st.chat_input("Your question"):
     st.session_state.messages.append({"role": "user", "content": prompt})
+    save_chat_history(st.session_state.messages)
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -188,3 +218,4 @@ if st.session_state.messages[-1]["role"] != "assistant":
             logging.info(f"question: {prompt}, response: {full_response}")
             message = {"role": "assistant", "content": full_response}
             st.session_state.messages.append(message)
+            save_chat_history(st.session_state.messages)
